@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudFormation Template configuring common vpc endpoints security
+
+Parameters:
+  Environment:
+    Description: The environment in which the stack is deployed
+    Type: String
+  PrivateLinkEndpointServiceName:
+    Description: The name of the PrivateLink Service
+    Type: String
+Resources:
+  CustomMapping:
+    Type: Custom::Lookup
+    Properties:
+      ServiceToken: !Sub
+        'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:liveservices-environment-mappings-lambda'
+      environment: !Ref Environment
+      region: !Ref AWS::Region
+  PrivatelinkEndpointSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: A PrivateLink VPC Endpoint Security Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1433
+          ToPort: 1433
+          CidrIp: 10.0.0.0/8
+          Description: Port 1433 access to the VPC Endpoint
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-epam-rds-rpowdev
+      VpcId: !GetAtt CustomMapping.vpc
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+  PrivateLinkEndpoint:
+      Type: AWS::EC2::VPCEndpoint
+      Properties:
+        VpcEndpointType: Interface
+        ServiceName: !Ref PrivateLinkEndpointServiceName
+        VpcId: !GetAtt CustomMapping.vpc
+        PrivateDnsEnabled: False
+        SubnetIds:
+          - !GetAtt CustomMapping.privateOpsSubnet1
+          - !GetAtt CustomMapping.privateOpsSubnet2
+        SecurityGroupIds:
+          - !Ref PrivatelinkEndpointSG
+  PrivateLinkCnameRecordPrivate:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !GetAtt CustomMapping.privateHostedZoneId
+      Name: !Sub epam-rds-rpowdev.${Environment}.woodmac.com
+      Type: CNAME
+      TTL: '300'
+      ResourceRecords:
+        - !Select
+          - 1
+          - !Split
+            - ':'
+            - !Select [0, !GetAtt PrivateLinkEndpoint.DnsEntries]
+  PrivateLinkCnameRecordPublic:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !GetAtt CustomMapping.publicHostedZoneId
+      Name: !Sub epam-rds-rpowdev.${Environment}.woodmac.com
+      Type: CNAME
+      TTL: '300'
+      ResourceRecords:
+        - !Select
+          - 1
+          - !Split
+            - ':'
+            - !Select [0, !GetAtt PrivateLinkEndpoint.DnsEntries]
+Outputs:
+  PrivatelinkEndpointSGId:
+    Description: ID Of the Epam RDS Private Link Security Group
+    Value: !GetAtt PrivatelinkEndpointSG.GroupId
+  VPCEndpointId:
+    Description: ID Of the Epam RDS Private Link Endpoint
+    Value: !Ref PrivateLinkEndpoint

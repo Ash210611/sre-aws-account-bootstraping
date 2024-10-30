@@ -1,0 +1,48 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation for deploying liveservices deployment bucket
+# deployed as woodmac-liveservices-${AWSACCOUNTNAME}-deploy-${region}
+
+Parameters:
+    AWSAccountName:
+      Description: Mention the name of aws account where you are deploying this template
+      Type: String
+
+Resources:
+  WoodmacLiveServicesDeployBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AccessControl: Private
+      BucketName: !Sub 'woodmac-liveservices-${AWSAccountName}-deploy-${AWS::Region}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'AES256'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortMultipartDefault
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 3
+      Tags:
+        - Key: Name
+          Value: !Sub 'woodmac-liveservices-${AWSAccountName}-deploy-${AWS::Region}'
+
+  WoodmacLiveServicesDeployBucketNameSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: The name of the Liveservices Deployment Bucket
+      Name: /liveservices/deployment-bucket-name
+      Type: String
+      Value: !Ref WoodmacLiveServicesDeployBucket
+Outputs:
+  WoodmacLiveServicesDeployBucketName:
+    Description: The name of the Liveservices Deployment Bucket
+    Value: !Ref WoodmacLiveServicesDeployBucket

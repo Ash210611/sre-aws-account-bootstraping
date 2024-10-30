@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudFormation Template configuring the NLB for a PrivateLink setup
+
+Parameters:
+  Environment:
+    Description: The Id of the VPC to attach the SGs
+    Type: String
+  NLBConfigDetails:
+    Description: >
+      An SSM Parameter holding the NLB target group and listener config
+      Holds values of shape `module;port;ip1&ip2,module2;port2;ip3&ip4`
+    Type: AWS::SSM::Parameter::Value<List<String>>
+    Default: wm-common-vpc-endpoints-private-link-nlbs
+  NLBArn:
+    Description: An SSM Parameter holding the NLB ARN
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /patuat/wm-common-vpc-endpoints-private-link-nlb-arn
+
+Resources:
+  CustomMapping:
+    Type: Custom::Lookup
+    Properties:
+      ServiceToken: !Sub
+        'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:liveservices-environment-mappings-lambda'
+      environment: !Ref Environment
+      region: !Ref AWS::Region
+  # If you want to add more modules, copy TargetGroup0 and Listener0 and change the
+  # names of the resources to TargetGroup1 and Listener1 and the
+  # last level of select closest to NLBConfigDetails to 1. Iterate for more integrations
+  TargetGroup0:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      # selects the port from
+      # module;port;ip1&ip2
+      Port: !Select
+        - 1
+        - !Split
+          - ';'
+          # selects the fist definition part from
+          # module;port;ip1&ip2,module2;port2;ip3&ip4
+          - !Select
+            - 0
+            - !Ref NLBConfigDetails
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          # selects the module from
+          # module;port;ip1&ip2
+          Value: !Select
+            - 0
+            - !Split
+              - ';'
+              # selects the fist definition part from
+              # module;port;ip1&ip2,module2;port2;ip3&ip4
+              - !Select
+                - 0
+                - !Ref NLBConfigDetails
+      Targets:
+        # selects ip1 from
+        # ip1&ip2
+        - Id: !Select
+          - 0
+          - !Split
+            - '&'
+            # selects ip1&ip2 from
+            # module;port;ip1&ip2
+            - !Select
+              - 2
+              - !Split
+                - ';'
+                # selects the fist definition part from
+                # module;port;ip1&ip2,module2;port2;ip3&ip4
+                - !Select
+                  - 0
+                  - !Ref NLBConfigDetails
+          # port towards NLB in destination account
+          Port: 443
+        # selects ip2 from
+        # ip1&ip2
+        - Id: !Select
+          - 1
+          - !Split
+            - '&'
+            # selects ip1&ip2 from
+            # module;port;ip1&ip2
+            - !Select
+              - 2
+              - !Split
+                - ';'
+                # selects the fist definition part from
+                # module;port;ip1&ip2,module2;port2;ip3&ip4
+                - !Select
+                  - 0
+                  - !Ref NLBConfigDetails
+          # port towards NLB in destination account
+          Port: 443
+  Listener0:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroup0
+      LoadBalancerArn: !Ref NLBArn
+      # selects the port from
+      # module;port;ip1&ip2
+      Port: !Select
+        - 1
+        - !Split
+          - ';'
+          # selects the fist definition part from
+          # module;port;ip1&ip2,module2;port2;ip3&ip4
+          - !Select
+            - 0
+            - !Ref NLBConfigDetails
+      Protocol: TCP

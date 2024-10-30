@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  PrivateLink Consumer setup for Ataccama prod
+
+Parameters:
+  Environment:
+    Description: The environment in which the stack is deployed
+    Type: String
+  PrivateLinkConnectionName:
+    Description: The name of the PrivateLink Connection
+    Type: String
+
+Resources:
+  CustomMapping:
+    Type: Custom::Lookup
+    Properties:
+      ServiceToken: !Sub
+        'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:liveservices-environment-mappings-lambda'
+      environment: !Ref Environment
+      region: !Ref AWS::Region
+  EndpointSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub A Security Group for ${PrivateLinkConnectionName} endpoint
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.89.159.0/24
+          Description: Port 443 access to the VPC Endpoint
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/8
+          Description: Port 443 access to the VPC Endpoint
+      VpcId: !GetAtt CustomMapping.vpc
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+Outputs:
+  EndpointSGId:
+    Description: ID Of the PrivateLink endpoint Security Group
+    Value: !GetAtt EndpointSG.GroupId

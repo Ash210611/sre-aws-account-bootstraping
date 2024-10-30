@@ -1,0 +1,7 @@
+# Global owned code
+
+*        @woodmac/sre-landing-zones
+
+# Protection for CODEOWNERS
+
+/.github/CODEOWNERS @woodmac/sre-landing-zones @woodmac/sre-admins

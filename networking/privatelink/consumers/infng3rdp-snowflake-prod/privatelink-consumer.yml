@@ -1,0 +1,161 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  PrivateLink Consumer setup for Snowflake prod
+
+Parameters:
+  Environment:
+    Description: The environment in which the stack is deployed
+    Type: String
+  PrivateLinkConnectionName:
+    Description: The name of the PrivateLink Connection
+    Type: String
+  PrivateLinkEndpointServiceName:
+    Description: The name of the third party endpoint service we are integrating with
+    Type: String
+
+Resources:
+  CustomMapping:
+    Type: Custom::Lookup
+    Properties:
+      ServiceToken: !Sub
+        'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:liveservices-environment-mappings-lambda'
+      environment: !Ref Environment
+      region: !Ref AWS::Region
+  EndpointSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub A Security Group for ${PrivateLinkConnectionName} endpoint
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.89.159.0/24
+          Description: Port 443 access to the VPC Endpoint
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/8
+          Description: Port 443 access to the VPC Endpoint
+      VpcId: !GetAtt CustomMapping.vpc
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+  ThirdPartyInterfaceEndpoint:
+      Type: AWS::EC2::VPCEndpoint
+      Properties:
+        VpcEndpointType: Interface
+        ServiceName: !Ref PrivateLinkEndpointServiceName
+        VpcId: !GetAtt CustomMapping.vpc
+        PrivateDnsEnabled: False
+        SubnetIds:
+          - !GetAtt CustomMapping.private3rdParty1
+          - !GetAtt CustomMapping.private3rdParty2
+          # - !GetAtt CustomMapping.private3rdParty3
+          # - !GetAtt CustomMapping.private3rdParty4
+          # - !GetAtt CustomMapping.private3rdParty5
+          # - !GetAtt CustomMapping.private3rdParty6
+        SecurityGroupIds:
+          - !Ref EndpointSG
+  SnowflakePrivateHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      HostedZoneConfig:
+        Comment: Private Hosted zone for Snowflake Privatelink integration
+      HostedZoneTags:
+        - Key: Name
+          Value: privatelink.snowflakecomputing.com
+      Name: privatelink.snowflakecomputing.com
+      VPCs:
+        - VPCId: !GetAtt CustomMapping.vpc
+          VPCRegion: !Ref AWS::Region
+  RegionlessSnowsightR53Record:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Comment: Regionless Snowsight
+      HostedZoneId: !Ref SnowflakePrivateHostedZone
+      Name: app-kxiypfv-knb63229.privatelink.snowflakecomputing.com.
+      ResourceRecords:
+        - !Select
+          - 1
+          - !Split [':', !Select [0, !GetAtt ThirdPartyInterfaceEndpoint.DnsEntries]]
+      TTL: '60'
+      Type: CNAME
+  SnowsightPrivatelinkR53Record:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Comment: Snowsight Privatelink
+      HostedZoneId: !Ref SnowflakePrivateHostedZone
+      Name: app.us-east-1.privatelink.snowflakecomputing.com.
+      ResourceRecords:
+        - !Select
+          - 1
+          - !Split [':', !Select [0, !GetAtt ThirdPartyInterfaceEndpoint.DnsEntries]]
+      TTL: '60'
+      Type: CNAME
+  RegionlessPrivatelinkOSCPR53Record:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Comment: Regionless Privatelink OSCP
+      HostedZoneId: !Ref SnowflakePrivateHostedZone
+      Name: ocsp.kxiypfv-knb63229.privatelink.snowflakecomputing.com.
+      ResourceRecords:
+        - !Select
+          - 1
+          - !Split [':', !Select [0, !GetAtt ThirdPartyInterfaceEndpoint.DnsEntries]]
+      TTL: '60'
+      Type: CNAME
+  PrivatelinkAccountR53Record:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Comment: Privatelink Account
+      HostedZoneId: !Ref SnowflakePrivateHostedZone
+      Name: jdb06403.us-east-1.privatelink.snowflakecomputing.com.
+      ResourceRecords:
+        - !Select
+          - 1
+          - !Split [':', !Select [0, !GetAtt ThirdPartyInterfaceEndpoint.DnsEntries]]
+      TTL: '60'
+      Type: CNAME
+  RegionlessPrivatelinkAccountR53Record:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Comment: Regionless Privatelink Account
+      HostedZoneId: !Ref SnowflakePrivateHostedZone
+      Name: kxiypfv-knb63229.privatelink.snowflakecomputing.com.
+      ResourceRecords:
+        - !Select
+          - 1
+          - !Split [':', !Select [0, !GetAtt ThirdPartyInterfaceEndpoint.DnsEntries]]
+      TTL: '60'
+      Type: CNAME
+  PrivatelinkOSCPR53Record:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Comment: Privatelink OSCP
+      HostedZoneId: !Ref SnowflakePrivateHostedZone
+      Name: kxiypfv-knb63229.privatelink.snowflakecomputing.com.
+      ResourceRecords:
+        - !Select
+          - 1
+          - !Split [':', !Select [0, !GetAtt ThirdPartyInterfaceEndpoint.DnsEntries]]
+      TTL: '60'
+      Type: CNAME
+Outputs:
+  EndpointSGId:
+    Description: ID Of the PrivateLink endpoint Security Group
+    Value: !GetAtt EndpointSG.GroupId
+  VPCEndpointId:
+    Description: The Id of the VPC Endpoint
+    Value: !Ref ThirdPartyInterfaceEndpoint
+  VPCEndpointDNSEntries:
+    Description: The VPC Endpoint DNS entries
+    Value: !Join
+      - ','
+      - !GetAtt ThirdPartyInterfaceEndpoint.DnsEntries
+  VPCEndpointNetworkInterfaceIds:
+    Description: The Interface IDs of the VPC Endpoint
+    Value: !Join
+      - ','
+      - !GetAtt ThirdPartyInterfaceEndpoint.NetworkInterfaceIds
+  PrivateHostedZoneId:
+    Description: The Id of the Private Hosted Zone
+    Value: !Ref SnowflakePrivateHostedZone

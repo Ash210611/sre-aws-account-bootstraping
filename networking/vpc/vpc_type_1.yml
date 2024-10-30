@@ -1,0 +1,744 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Cautions: This template creates VPC with 6 Private & 2 Public
+  subnets. For any actions, please contact: WM-SRE-Team@woodmac.com'
+Parameters:
+  AccountAlias:
+    Description: |
+      The name of the AWS account in which this is deployed. Used in vpc
+      name so needs to comply with supported Tag characters. No spaces.
+    Default: woodmac-sandbox
+    Type: String
+  BusinessUnit:
+    Description: BusinessUnit
+    Default: Woodmac
+    Type: String
+  Contact:
+    Description: Contact
+    Default: WM-SRE-Team@woodmac.com
+    Type: String
+  Description:
+    Description: Description
+    Default: |
+      A standard VPC of Type 1 with 8 subnets, 2 public and 3 pairs of
+      private with nat gateway internet access
+    Type: String
+  Environment:
+    Description: What environment is this?
+    Default: sandbox
+    Type: String
+    AllowedPattern: (?:.*)dev|(?:.*)int|(?:.*)uat|(?:.*)prod|(?:.*)sandbox
+    ConstraintDescription: |
+      Malformed input for Environment. Should be compliant with
+      environment naming convention
+      https://woodmac.atlassian.net/wiki/spaces/WMTECH/pages/25964313/Environment+Naming+Conventions
+  PrivateWebSubnet01:
+    Description: CIDR block of Private Web Subnet AZ 01
+    Default: 10.92.129.0/25
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: |
+      Malformed input-Parameter for PrivateWebSubnet01, must be
+      in format of CIDR block (e.g 10.0.3.0/24).
+  PrivateWebSubnet02:
+    Description: CIDR block of Private Web Subnet AZ 02
+    Default: 10.92.129.128/25
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: |
+      Malformed input-Parameter for PrivateWebSubnet01, must be
+      in format of CIDR block (e.g 10.0.3.0/24).
+  PrivateAppSubnet01:
+    Description: CIDR block of Private App Subnet AZ 01
+    Default: 10.92.130.0/25
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: |
+      Malformed input-Parameter for PrivateWebSubnet01, must be
+      in format of CIDR block (e.g 10.0.3.0/24).
+  PrivateAppSubnet02:
+    Description: CIDR block of Private App Subnet AZ 02
+    Default: 10.92.130.128/25
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: |
+      Malformed input-Parameter for PrivateWebSubnet01, must be
+      in format of CIDR block (e.g 10.0.3.0/24).
+  PrivateDBSubnet01:
+    Description: CIDR block of Private DB Subnet AZ 01
+    Default: 10.92.131.0/25
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: |
+      Malformed input-Parameter for PrivateWebSubnet01, must be
+      in format of CIDR block (e.g 10.0.3.0/24).
+  PrivateDBSubnet02:
+    Description: CIDR block of Private DB Subnet AZ 02
+    Default: 10.92.131.128/25
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: |
+      Malformed input-Parameter for PrivateWebSubnet01, must be
+      in format of CIDR block (e.g 10.0.3.0/24).
+  PublicWebSubnet01:
+    Description: CIDR block of Public ELB/ALB Subnet AZ 01
+    Default: 10.92.128.0/25
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: |
+      Malformed input-Parameter for PublicWebSubnet01, must be
+      in format of CIDR block (e.g 10.0.3.0/24).
+  PublicWebSubnet02:
+    Description: CIDR block of Public ELB/ALB Subnet AZ 02
+    Default: 10.92.128.128/25
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: |
+      Malformed input-Parameter for PublicWebSubnet02, must be
+      in format of CIDR block (e.g 10.0.3.0/24).
+  VpcCIDR:
+    Description: The CIDR of VPC that was created.
+    Default: 10.92.128.0/22
+    Type: String
+  VPCFlowLogDefaultFields:
+    Description: |
+      The Additional Fields that can be provided
+      as per https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs.html#flow-log-records
+    Default: ${version} ${account-id} ${interface-id} ${srcaddr} ${dstaddr} ${srcport} ${dstport} ${protocol} ${packets} ${bytes} ${start} ${end} ${action} ${log-status} ${flow-direction} ${vpc-id} ${subnet-id} ${instance-id} ${region} ${az-id} ${tcp-flags} ${type} ${pkt-srcaddr} ${pkt-dstaddr} ${pkt-src-aws-service} ${pkt-dst-aws-service} ${traffic-path}
+    Type: String
+  CloudWANAttachment:
+    Description: Binary string value to determine if CloudWAN is attached
+    Default: false
+    Type: String
+    AllowedValues:
+      - true
+      - false
+  CloudWANSegment:
+    Description: The CloudWAN Segment to attach to https://woodmac.atlassian.net/wiki/spaces/WMTECH/pages/287376148/CWAN+Segments+sharing+matrix+and+segments+config
+    Default: ghost
+    AllowedValues:
+         - ghost
+         - transit
+         - management
+         - managementnonprod
+         - prod
+         - nonprod
+         - prodrestricted
+    Type: String
+
+Conditions:
+  AttachToCWAN: !Equals
+    - !Ref CloudWANAttachment
+    - 'true'
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      RegionShort: use1
+      R53ResolverDotRuleId: rslvr-rr-892a3d8379e04c58a
+      CWANPrefixListId: pl-060af264500f10602
+      CWANTargetARN: arn:aws:networkmanager::818197923886:core-network/core-network-0a9d510217183dd28
+      CWANGlobalNetworkId: core-network-0a9d510217183dd28
+    eu-west-1:
+      RegionShort: euw1
+      R53ResolverDotRuleId: rslvr-rr-2e20f3d706740acb1
+      CWANPrefixListId: pl-0b68888083ddff42b
+      CWANTargetARN: arn:aws:networkmanager::818197923886:core-network/core-network-0a9d510217183dd28
+      CWANGlobalNetworkId: core-network-0a9d510217183dd28
+    ap-southeast-1:
+      RegionShort: apse1
+      R53ResolverDotRuleId: rslvr-rr-22b71f32715348a7b
+      CWANPrefixListId: pl-03cbf2c2a5da5da7d
+      CWANTargetARN: arn:aws:networkmanager::818197923886:core-network/core-network-0a9d510217183dd28
+      CWANGlobalNetworkId: core-network-0a9d510217183dd28
+    ap-southeast-2:
+      RegionShort: apse2
+      R53ResolverDotRuleId: rslvr-rr-b10ba4685ee342599
+      CWANPrefixListId: pl-0b6696189c9709dde
+      CWANTargetARN: arn:aws:networkmanager::818197923886:core-network/core-network-0a9d510217183dd28
+      CWANGlobalNetworkId: core-network-0a9d510217183dd28
+    eu-central-1:
+      RegionShort: euc1
+      R53ResolverDotRuleId: rslvr-rr-44d5fcefb5314f5f8
+      CWANPrefixListId: pl-0d450d9b0665b42b2
+      CWANTargetARN: arn:aws:networkmanager::818197923886:core-network/core-network-0a9d510217183dd28
+      CWANGlobalNetworkId: core-network-0a9d510217183dd28
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: 'true'
+      EnableDnsSupport: 'true'
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub
+            - vpc-${RegionShort}-${AccountAlias}-${Environment}
+            - RegionShort: !FindInMap
+                - RegionMap
+                - !Ref AWS::Region
+                - RegionShort
+        - Key: Description
+          Value: !Ref Description
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+        - Key: Contact
+          Value: !Ref Contact
+  VPCIdSSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for VPC {AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/vpc-id
+      Type: String
+      Value: !Ref VPC
+  PublicSubnetAZ01Web:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicWebSubnet01
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: !Sub pub-1-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Public Web subnet for ${AccountAlias}-${Environment} in AZ 01
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: DeploymentZone
+          Value: public
+        - Key: WorkloadType
+          Value: web
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  PublicSubnetAZ01WebSSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for public web subnet in AZ 01 {AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/pub-1-web-subnet
+      Type: String
+      Value: !Ref PublicSubnetAZ01Web
+  PublicSubnetAZ02Web:
+    Type: AWS::EC2::Subnet
+    DependsOn: PublicSubnetAZ01Web
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicWebSubnet02
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: !Sub pub-2-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Public Web subnet for ${AccountAlias}-${Environment} in AZ 02
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: DeploymentZone
+          Value: public
+        - Key: WorkloadType
+          Value: web
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  PublicSubnetAZ02WebSSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for public web subnet in AZ 02
+        {AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/pub-2-web-subnet
+      Type: String
+      Value: !Ref PublicSubnetAZ02Web
+  PrivateSubnetAZ01Web:
+    Type: AWS::EC2::Subnet
+    DependsOn: PublicSubnetAZ02Web
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateWebSubnet01
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: !Sub priv-1-web-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Private Web subnet for ${AccountAlias}-${Environment} in AZ 01
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: DeploymentZone
+          Value: private_with_nat
+        - Key: WorkloadType
+          Value: web
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  PrivateSubnetAZ01WebSSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for private web subnet in AZ 01
+        {AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/priv-1-web-subnet
+      Type: String
+      Value: !Ref PrivateSubnetAZ01Web
+  PrivateSubnetAZ02Web:
+    Type: AWS::EC2::Subnet
+    DependsOn: PrivateSubnetAZ01Web
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateWebSubnet02
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: !Sub priv-2-web-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Private Web subnet for ${AccountAlias}-${Environment} in AZ 02
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: DeploymentZone
+          Value: private_with_nat
+        - Key: WorkloadType
+          Value: web
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  PrivateSubnetAZ02WebSSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for private web subnet in AZ 02 {AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/priv-2-web-subnet
+      Type: String
+      Value: !Ref PrivateSubnetAZ02Web
+  PrivateSubnetAZ01App:
+    Type: AWS::EC2::Subnet
+    DependsOn: PrivateSubnetAZ02Web
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateAppSubnet01
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: !Sub priv-1-app-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Private App subnet for ${AccountAlias}-${Environment} in AZ 01
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: DeploymentZone
+          Value: private_with_nat
+        - Key: WorkloadType
+          Value: app
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  PrivateSubnetAZ01AppSSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for private app subnet in AZ 01 {AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/priv-1-app-subnet
+      Type: String
+      Value: !Ref PrivateSubnetAZ01App
+  PrivateSubnetAZ02App:
+    Type: AWS::EC2::Subnet
+    DependsOn: PrivateSubnetAZ01App
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateAppSubnet02
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: !Sub priv-2-app-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Private App subnet for ${AccountAlias}-${Environment} in AZ 02
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: DeploymentZone
+          Value: private_with_nat
+        - Key: WorkloadType
+          Value: app
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  PrivateSubnetAZ02AppSSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for private app subnet in AZ 02 {AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/priv-2-app-subnet
+      Type: String
+      Value: !Ref PrivateSubnetAZ02App
+  PrivateSubnetAZ01DB:
+    Type: AWS::EC2::Subnet
+    DependsOn: PrivateSubnetAZ02App
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateDBSubnet01
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: !Sub priv-1-db-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Private DB subnet for ${AccountAlias}-${Environment} in AZ 01
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: DeploymentZone
+          Value: private_with_nat
+        - Key: WorkloadType
+          Value: db
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  PrivateSubnetAZ01DBSSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for private db subnet in AZ 01 {AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/priv-1-db-subnet
+      Type: String
+      Value: !Ref PrivateSubnetAZ01DB
+  PrivateSubnetAZ02DB:
+    Type: AWS::EC2::Subnet
+    DependsOn: PrivateSubnetAZ01DB
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateDBSubnet02
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: !Sub priv-2-db-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Private DB subnet for ${AccountAlias}-${Environment} in AZ 02
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: DeploymentZone
+          Value: private_with_nat
+        - Key: WorkloadType
+          Value: db
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  PrivateSubnetAZ02DBSSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for private db subnet in AZ 02 {AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/priv-2-db-subnet
+      Type: String
+      Value: !Ref PrivateSubnetAZ02DB
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub rt-pub-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Public subnet route table ${AccountAlias}-${Environment}
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  PublicSubnetRouteTableAssociation01:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetAZ01Web
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetRouteTableAssociation02:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetAZ02Web
+      RouteTableId: !Ref PublicRouteTable
+  PrivateRouteTableAZ01:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub rt-priv-1-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Private subnets route table for ${AccountAlias}-${Environment}
+            in AZ 01
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  PrivateSubnetAZ01WebRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetAZ01Web
+      RouteTableId: !Ref PrivateRouteTableAZ01
+  PrivateSubnetAZ01AppRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetAZ01App
+      RouteTableId: !Ref PrivateRouteTableAZ01
+  PrivateSubnetAZ01DBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetAZ01DB
+      RouteTableId: !Ref PrivateRouteTableAZ01
+  PrivateRouteTableAZ01SSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for private route table az 01 rt-priv-1-${AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/rt-priv-1-id
+      Type: String
+      Value: !Ref PrivateRouteTableAZ01
+  PrivateRouteTableAZ02:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub rt-priv-2-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Private subnets route table for ${AccountAlias}-${Environment} in AZ 02
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  PrivateSubnetAZ02WebRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetAZ02Web
+      RouteTableId: !Ref PrivateRouteTableAZ02
+  PrivateSubnetAZ02AppRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetAZ02App
+      RouteTableId: !Ref PrivateRouteTableAZ02
+  PrivateSubnetAZ02DBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetAZ02DB
+      RouteTableId: !Ref PrivateRouteTableAZ02
+  PrivateRouteTableAZ02SSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for private route table az 02 rt-priv-2-${AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/rt-priv-2-id
+      Type: String
+      Value: !Ref PrivateRouteTableAZ02
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub igw-${AccountAlias}-${Environment}
+        - Key: Description
+          Value: !Sub The Internet Gateway for ${AccountAlias}-${Environment}
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: BusinessUnit
+          Value: !Ref BusinessUnit
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  NAT01:
+    DependsOn: AttachGateway
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIP01.AllocationId
+      SubnetId: !Ref PublicSubnetAZ01Web
+  EIP01:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  NAT02:
+    DependsOn: NAT01
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIP02.AllocationId
+      SubnetId: !Ref PublicSubnetAZ02Web
+  EIP02:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  NATRoutePriv1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAZ01
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NAT01
+  NATRoutePriv2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAZ02
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NAT02
+  DynamoDBEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds:
+        - !Ref PrivateRouteTableAZ01
+        - !Ref PrivateRouteTableAZ02
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.dynamodb
+      VpcId: !Ref VPC
+  DynamoDBEndpointSSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for the DynamoDB VPC Endpoint ${AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/dynamodb-endpoint
+      Type: String
+      Value: !Ref DynamoDBEndpoint
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds:
+        - !Ref PrivateRouteTableAZ01
+        - !Ref PrivateRouteTableAZ02
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcId: !Ref VPC
+  S3EndpointSSM:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub An SSM parameter holding id for the S3 VPC Endpoint ${AccountAlias}-${Environment}
+      Name: !Sub /${Environment}/sre/s3-endpoint
+      Type: String
+      Value: !Ref S3Endpoint
+  VPCRoute53ResolverDotRuleAssociation:
+    Type: AWS::Route53Resolver::ResolverRuleAssociation
+    Properties:
+      ResolverRuleId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - R53ResolverDotRuleId
+      VPCId: !Ref VPC
+  VPCFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      LogDestination: arn:aws:s3:::s3-vpcflowlogs-prod-use1-01
+      LogDestinationType: s3
+      LogFormat: !Sub ${VPCFlowLogDefaultFields}
+      MaxAggregationInterval: 60
+      ResourceId: !Ref VPC
+      ResourceType: VPC
+      TrafficType: ALL
+
+# Optional Attachment to CWAN
+  NetworkManagerAttachment:
+    Condition: AttachToCWAN
+    Type: AWS::NetworkManager::VpcAttachment
+    Properties:
+      CoreNetworkId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - CWANGlobalNetworkId
+      SubnetArns:
+        - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${PrivateSubnetAZ01App}
+        - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${PrivateSubnetAZ02App}
+      Tags:
+        - Key: Name
+          Value: !Sub
+            - vpc-${RegionShort}-${AccountAlias}-${Environment}
+            - RegionShort: !FindInMap
+                - RegionMap
+                - !Ref AWS::Region
+                - RegionShort
+        - Key: segment
+          Value: !Ref CloudWANSegment
+      VpcArn: !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VPC}
+
+# Optional Route Table entry to CWAN
+  CWANRouteAZ1:
+    DependsOn:
+         - NetworkManagerAttachment
+    Condition: AttachToCWAN
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAZ01
+      DestinationPrefixListId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - CWANPrefixListId
+      CoreNetworkArn: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - CWANTargetARN
+  CWANRouteAZ2:
+    DependsOn:
+         - NetworkManagerAttachment
+    Condition: AttachToCWAN
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAZ02
+      DestinationPrefixListId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - CWANPrefixListId
+      CoreNetworkArn: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - CWANTargetARN
+
+Outputs:
+  CloudWANAttachmentID:
+    Value: !If [AttachToCWAN, !Ref NetworkManagerAttachment, 'no attachment']
+    Description: The ID of the CloudWAN Attachment, 'no attachment' if not attached
+  DynamoDBEndpointId:
+    Value: !Ref DynamoDBEndpoint
+    Description: Id for DynamoDB VPC endpoint
+  NATGatewayEP01:
+    Value: !Ref EIP01
+    Description: The Ip of the NAT Gateway in AZ 01
+  NATGatewayEP02:
+    Value: !Ref EIP02
+    Description: The Ip of the NAT Gateway in AZ 02
+  PrivateRouteTableAZ01Id:
+    Value: !Ref PrivateRouteTableAZ01
+    Description: Id for private route table az 01
+  PrivateRouteTableAZ02Id:
+    Value: !Ref PrivateRouteTableAZ02
+    Description: Id for private route table az 02
+  PrivateSubnetAppAZ01Id:
+    Value: !Ref PrivateSubnetAZ01App
+    Description: Id for private subnet app az 01
+  PrivateSubnetAppAZ02Id:
+    Value: !Ref PrivateSubnetAZ02App
+    Description: Id for private subnet app az 02
+  PrivateSubnetDBAZ01Id:
+    Value: !Ref PrivateSubnetAZ01DB
+    Description: Id for private subnet db az 01
+  PrivateSubnetDBAZ02Id:
+    Value: !Ref PrivateSubnetAZ02DB
+    Description: Id for private subnet db az 02
+  PrivateSubnetWebAZ01Id:
+    Value: !Ref PrivateSubnetAZ01Web
+    Description: Id for private subnet web az 01
+  PrivateSubnetWebAZ02Id:
+    Value: !Ref PrivateSubnetAZ02Web
+    Description: Id for private subnet web az 02
+  PublicRouteTableId:
+    Value: !Ref PublicRouteTable
+    Description: Id for public route table
+  PublicSubnetWebAZ01Id:
+    Value: !Ref PublicSubnetAZ01Web
+    Description: Id for public subnet web az 01
+  PublicSubnetWebAZ02Id:
+    Value: !Ref PublicSubnetAZ02Web
+    Description: Id for public subnet web az 02
+  S3EndpointId:
+    Value: !Ref S3Endpoint
+    Description: Id for S3 VPC endpoint
+  VPCId:
+    Value: !Ref VPC
+    Description: VPC Id

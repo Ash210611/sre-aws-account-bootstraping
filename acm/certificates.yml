@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Initial ACM Certificates setup
+Parameters:
+  Environment:
+    Description: The environment name. Usually the same as HostedZoneSubdomain
+    Type: String
+  CertificateSubdomain:
+    Description: The subdomain of the certificate to be created
+    Type: String
+  HostedZoneIdSSM:
+    Description: SSM Parameter with the Publih Hosted Zone Id for the domain
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /$Environment/cloudops/dns/public_hosted_zone_id_$CertificateSubdomain
+
+Resources:
+  ACMCertificate:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub '${CertificateSubdomain}.woodmac.com'
+      DomainValidationOptions:
+        - DomainName: !Sub '${CertificateSubdomain}.woodmac.com'
+          HostedZoneId: !Ref HostedZoneIdSSM
+      SubjectAlternativeNames:
+        - !Sub '*.${CertificateSubdomain}.woodmac.com'
+      ValidationMethod: DNS
+  ACMCertificateArnSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Arn for the ACM Certificate for ${CertificateSubdomain}.woodmac.com
+      Name: !Sub /${Environment}/cloudops/acm/wildcard_certificate_arn_${CertificateSubdomain}
+      Type: String
+      Value: !Ref ACMCertificate
+Outputs:
+  ACMCertificateArn:
+    Description: The ARN of the wildcard certificate for the subdomain
+    Value: !Ref ACMCertificate
+  ACMCertificateDomainName:
+    Description: The domain name for which we have created a certificate
+    Value: !Sub '*.${CertificateSubdomain}.woodmac.com'

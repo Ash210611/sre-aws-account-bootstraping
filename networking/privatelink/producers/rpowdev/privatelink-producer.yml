@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  PrivateLink provider setup for Valuation
+
+Parameters:
+  Environment:
+    Description: The environment in which the stack is deployed
+    Type: String
+  PrivateLinkConnectionName:
+    Description: The name of the PrivateLink Connection
+    Type: String
+
+Mappings:
+  rpowdev:
+    epamrds:
+      ip: '10.89.205.122'
+      fqdn: 'wm-pandr-rds-epam.ciedqx9kizpw.us-east-1.rds.amazonaws.com'
+      destport: '1433'
+      nlbport: '1433'
+    ldpnonprod:
+      accountid: '744315503534'
+
+Resources:
+  CustomMapping:
+    Type: Custom::Lookup
+    Properties:
+      ServiceToken: !Sub
+        'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:liveservices-environment-mappings-lambda'
+      environment: !Ref Environment
+      region: !Ref AWS::Region
+  PrivateLinkNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Type: network
+      Scheme: internal
+      Subnets:
+        - !GetAtt CustomMapping.privateWebSubnet1
+        - !GetAtt CustomMapping.privateWebSubnet2
+        - !GetAtt CustomMapping.privateWebSubnet3
+        - !GetAtt CustomMapping.privateWebSubnet4
+        - !GetAtt CustomMapping.privateWebSubnet5
+        - !GetAtt CustomMapping.privateWebSubnet6
+      LoadBalancerAttributes:
+        - Key: load_balancing.cross_zone.enabled
+          Value: true
+        - Key: deletion_protection.enabled
+          Value: true
+  SSMParamPrivateLinkNLBArn:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub The ARN of the PrivateLink NLB for ${PrivateLinkConnectionName}
+      Type: String
+      Name: !Sub '/${Environment}/${PrivateLinkConnectionName}/wm-common-vpc-endpoints-private-link-nlb-arn'
+      Value: !Ref PrivateLinkNLB
+  TargetGroupEPAMRDS:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !FindInMap [rpowdev, epamrds, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: EPAMRDS
+      Targets:
+        - Id: !FindInMap [rpowdev, epamrds, ip]
+          Port: !FindInMap [rpowdev, epamrds, destport]
+  ListenerEPAMRDS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupEPAMRDS
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !FindInMap [rpowdev, epamrds, nlbport]
+      Protocol: TCP
+  PrivateLinkService:
+    Type: AWS::EC2::VPCEndpointService
+    Properties:
+      AcceptanceRequired: True
+      NetworkLoadBalancerArns:
+        - !GetAtt PrivateLinkNLB.LoadBalancerArn
+  ServiceEndpointPermission:
+    Type: AWS::EC2::VPCEndpointServicePermissions
+    Properties:
+      AllowedPrincipals:
+        - !Sub
+          - arn:${partition}:iam::${account}:root
+          - account: !FindInMap [rpowdev, ldpnonprod, accountid]
+            partition: !Ref AWS::Partition
+      ServiceId: !GetAtt PrivateLinkService.ServiceId
+Outputs:
+  PrivateLinkNLBCanonicalZone:
+    Description: The CanonicalZoneId of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.CanonicalHostedZoneID
+  PrivateLinkNLBArn:
+    Description: The Arn of the PrivateLink NLB
+    Value: !Ref PrivateLinkNLB
+  PrivateLinkNLBFullName:
+    Description: The Full Name of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.LoadBalancerFullName
+  VPCEndpointServiceId:
+    Description: The ID of the VPC Endpoint Service
+    Value: !GetAtt PrivateLinkService.ServiceId
+  VPCEndpointServiceName:
+    Description: The Name of the VPC Endpoint Service
+    Value: !Sub com.amazonaws.vpce.${AWS::Region}.${PrivateLinkService.ServiceId}

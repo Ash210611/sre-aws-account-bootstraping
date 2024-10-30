@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Hosted Zones setup
+Parameters:
+  Environment:
+    Description: The environment name. Usually the same as HostedZoneSubdomain
+    Type: String
+  HostedZoneSubdomain:
+    Description: The subdomain of the hosted zones to be created
+    Type: String
+
+Resources:
+  PublicHostedZone:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::Route53::HostedZone
+    Properties:
+      HostedZoneConfig:
+        Comment: publiczone
+      Name: !Sub '${HostedZoneSubdomain}.woodmac.com'
+  PublicHostedZoneIdSSMParameter:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Public Hosted Zone ID for ${HostedZoneSubdomain}.woodmac.com
+      Name: !Sub /${Environment}/cloudops/dns/public_hosted_zone_id_${HostedZoneSubdomain}
+      Type: String
+      Value: !Ref PublicHostedZone
+  PublicHostedZoneNSServersSSMParameter:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Public Hosted Zone ${HostedZoneSubdomain}.woodmac.com NS Servers
+      Name: !Sub /${Environment}/cloudops/dns/public_hosted_zone_ns_servers_${HostedZoneSubdomain}
+      Type: String
+      Value: !Sub
+        - '{"nameservers":["${NS}"]}'
+        - NS: !Join ['","', !GetAtt PublicHostedZone.NameServers]
+  PrivateHostedZone:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::Route53::HostedZone
+    Properties:
+      HostedZoneConfig:
+        Comment: privatezone
+      Name: !Sub '${HostedZoneSubdomain}.woodmac.com'
+  PrivateHostedZoneIdSSMParameter:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Private Hosted Zone ID for ${HostedZoneSubdomain}.woodmac.com
+      Name: !Sub /${Environment}/cloudops/dns/private_hosted_zone_id_${HostedZoneSubdomain}
+      Type: String
+      Value: !Ref PrivateHostedZone
+  PrivateHostedZoneNSServersSSMParameter:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub Private Hosted Zone ${HostedZoneSubdomain}.woodmac.com NS Servers
+      Name: !Sub /${Environment}/cloudops/dns/private_hosted_zone_ns_servers_${HostedZoneSubdomain}
+      Type: String
+      Value: !Sub
+        - '{"nameservers":["${NS}"]}'
+        - NS: !Join ['","', !GetAtt PrivateHostedZone.NameServers]
+Outputs:
+  PublicHostedZoneId:
+    Description: The Public Hosted Zone Id
+    Value: !Ref PublicHostedZone
+  PublicHostedZoneNSServers:
+    Description: The NS servers for the public hosted zone (for woodmac.com addition)
+    Value: !Sub
+      - '{"nameservers":["${NS}"]}'
+      - NS: !Join ['","', !GetAtt PublicHostedZone.NameServers]
+  PrivateHostedZoneId:
+    Description: The Private Hosted Zone Id
+    Value: !Ref PrivateHostedZone
+  PrivateHostedZoneNSServers:
+    Description: The NS servers for the private hosted zone (for DNS Resolver config)
+    Value: !Sub
+      - '{"nameservers":["${NS}"]}'
+      - NS: !Join ['","', !GetAtt PrivateHostedZone.NameServers]

@@ -1,0 +1,72 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  CloudFormation for deploying an Account wide CW Logs Resource Policy
+  Some accounts need a consolidation of the resource policy due to policy
+  size limits for the account https://docs.aws.amazon.com/step-functions/latest/dg/bp-cwl.html
+  https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/AWS-logs-and-resource-policy.html
+
+Resources:
+  AccountWideCWLogsResourcePolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyDocument: !Sub >
+        {
+          "Version":"2012-10-17",
+          "Statement":[
+            {
+              "Sid":"AWSRestrictedResources",
+              "Effect":"Allow",
+              "Principal":{
+                "Service": [
+                  "delivery.logs.amazonaws.com",
+                  "es.amazonaws.com"
+                ]
+              },
+              "Action":[
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource":[
+                "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/*:log-stream:*",
+                "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:offshore-wind-valuation-transfer-stepfunctionlogs-dev:log-stream:*",
+                "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:ava-airbender-*:log-stream:*",
+                "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/msk/*:log-stream:*"
+              ],
+              "Condition":{
+                "StringEquals":{
+                  "aws:SourceAccount":"${AWS::AccountId}"
+                },
+                "ArnLike":{
+                  "aws:SourceArn":"arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+                }
+              }
+            },
+            {
+              "Sid":"AWSDatasync",
+              "Effect":"Allow",
+              "Principal":{
+                "Service": [
+                  "datasync.amazonaws.com"
+                ]
+              },
+              "Action":[
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource":[
+                "*"
+              ],
+              "Condition":{
+                "StringEquals":{
+                  "aws:SourceAccount":"${AWS::AccountId}"
+                },
+                "ArnLike":{
+                  "aws:SourceArn":"arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+                }
+              }
+            }
+          ]
+        }
+      PolicyName: LandingZonesManagedPolicy
+

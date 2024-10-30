@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudFormation Template configuring common vpc endpoints
+
+Parameters:
+  Environment:
+    Description: The Id of the VPC to attach the SGs
+    Type: String
+
+Conditions:
+  LDPPrivateLinkEnvironment: !Or
+    - !Equals [!Ref Environment, 'patdev']
+    - !Equals [!Ref Environment, 'patuat']
+    - !Equals [!Ref Environment, 'patprod']
+
+Resources:
+  CustomMapping:
+    Type: Custom::Lookup
+    Properties:
+      ServiceToken: !Sub
+        'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:liveservices-environment-mappings-lambda'
+      environment: !Ref Environment
+      region: !Ref AWS::Region
+  APIGatewayEndpointSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: An API Gateway VPC Endpoint Security Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 10.0.0.0/8
+          Description: Port 80 access to the VPC Endpoint
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/8
+          Description: Port 443 access to the VPC Endpoint
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-api-gateway
+      VpcId: !GetAtt CustomMapping.vpc
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+  ElasticCloudEndpointSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: An Elastic Cloud VPC Endpoint Security Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 9443
+          ToPort: 9443
+          CidrIp: 10.0.0.0/8
+          Description: Port 9443 access to the VPC Endpoint - Elastic from Logstash
+        - IpProtocol: tcp
+          FromPort: 9200
+          ToPort: 9200
+          CidrIp: 10.0.0.0/8
+          Description: Port 9200 access to the VPC Endpoint - Elasticsearch
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/8
+          Description: Port 443 access to the VPC Endpoint - Kibana
+        - IpProtocol: tcp
+          FromPort: 9243
+          ToPort: 9243
+          CidrIp: 10.0.0.0/8
+          Description: Port 9243 access to the VPC Endpoint - Kibana
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-elastic-cloud
+      VpcId: !GetAtt CustomMapping.vpc
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+  # ElasticPrivateHostedZone:
+  #   Type: AWS::Route53::HostedZone
+  #   DeletionPolicy: Retain
+  #   UpdateReplacePolicy: Retain
+  #   Properties:
+  #     HostedZoneConfig:
+  #       Comment: Private Hosted Zone for Elastic Cloud PrivateLink setup
+  #     Name: !Sub vpce.${AWS::Region}.aws.elastic-cloud.com
+  #     VPCs:
+  #       - VPCId: !GetAtt CustomMapping.vpc
+  #         VPCRegion: !Ref AWS::Region
+  PrivateLinkNLB:
+    Condition: LDPPrivateLinkEnvironment
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Type: network
+      Scheme: internal
+      Subnets:
+        - !GetAtt CustomMapping.privateWebSubnet1
+        - !GetAtt CustomMapping.privateWebSubnet2
+        # - !GetAtt CustomMapping.privateWebSubnet3
+        # - !GetAtt CustomMapping.privateWebSubnet4
+        # - !GetAtt CustomMapping.privateWebSubnet5
+        # - !GetAtt CustomMapping.privateWebSubnet6
+      LoadBalancerAttributes:
+        - Key: load_balancing.cross_zone.enabled
+          Value: true
+        - Key: deletion_protection.enabled
+          Value: true
+  SSMParamPrivateLinkNLBArn:
+    Condition: LDPPrivateLinkEnvironment
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: The ARN of the PrivateLink NLB
+      Type: String
+      Name: !Sub '/${Environment}/wm-common-vpc-endpoints-private-link-nlb-arn'
+      Value: !Ref PrivateLinkNLB
+Outputs:
+  APIGatewayEndpointSGId:
+    Description: ID Of the API Gateway Endpoint Security Group
+    Value: !GetAtt APIGatewayEndpointSG.GroupId
+  ElasticCloudEndpointSGId:
+    Description: ID Of the Elastic Cloud Endpoint Security Group
+    Value: !GetAtt ElasticCloudEndpointSG.GroupId
+  PrivateLinkNLBCanonicalZone:
+    Description: The CanonicalZoneId of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.CanonicalHostedZoneID
+    Condition: LDPPrivateLinkEnvironment
+  PrivateLinkNLBArn:
+    Description: The Arn of the PrivateLink NLB
+    Value: !Ref PrivateLinkNLB
+    Condition: LDPPrivateLinkEnvironment
+  PrivateLinkNLBFullName:
+    Description: The Full Name of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.LoadBalancerFullName
+    Condition: LDPPrivateLinkEnvironment
+  # ElasticPrivateHostedZoneId:
+  #   Description: The Elastic Private Hosted Zone Id
+  #   Value: !Ref ElasticPrivateHostedZone

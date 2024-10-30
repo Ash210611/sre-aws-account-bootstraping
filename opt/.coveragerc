@@ -1,0 +1,7 @@
+[run]
+branch = True
+omit = */build/*,tests/*,*/pytest_cache/*,.venv/*,.cache/*,
+[report]
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError.*

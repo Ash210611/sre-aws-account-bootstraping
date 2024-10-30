@@ -1,0 +1,331 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  PrivateLink producer setup for InfNG to Ataccama Prod
+
+Parameters:
+  Environment:
+    Description: The environment in which the stack is deployed
+    Type: String
+  PrivateLinkConnectionName:
+    Description: The name of the PrivateLink Connection
+    Type: String
+
+# Hardcoded Ips due to the limitations of NLB. If this presents issues we will need to set up an ALB as a target group, then have HAProxy routing based on DNS records.
+Mappings:
+  prod:
+    WMDB:
+      ip: '10.1.96.122'
+      fqdn: wmdb-prd.woodmac.com
+      destport: 1521
+      nlbport: 1521
+    ETPPostgres:
+      ip: '10.89.167.154'
+      fqdn: etp-dbcluster-iprod.cluster-cra9t06afu3g.us-east-1.rds.amazonaws.com
+      destport: 5432
+      nlbport: 5432
+    ETPNeo4j:
+      ip: 10.89.167.48,10.89.167.215
+      fqdn: etp-neo4j.iprod.woodmac.com
+      destport: 7473,7474,7687
+      nlbport: 7473,7474,7687
+    LDPMDMPostgres:
+      ip: '10.197.4.189'
+      fqdn: pipeline-mdm-locations.cluster-ro-cc59qrzpsiwd.us-east-1.rds.amazonaws.com
+      destport: 5432
+      nlbport: 5434
+
+Resources:
+  CustomMapping:
+    Type: Custom::Lookup
+    Properties:
+      ServiceToken: !Sub
+        'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:liveservices-environment-mappings-lambda'
+      environment: !Ref Environment
+      region: !Ref AWS::Region
+  PrivateLinkNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Type: network
+      Scheme: internal
+      Subnets:
+        - !GetAtt CustomMapping.private3rdParty1
+        - !GetAtt CustomMapping.private3rdParty2
+        - !GetAtt CustomMapping.private3rdParty3
+        - !GetAtt CustomMapping.private3rdParty4
+        - !GetAtt CustomMapping.private3rdParty5
+        - !GetAtt CustomMapping.private3rdParty6
+      LoadBalancerAttributes:
+        - Key: load_balancing.cross_zone.enabled
+          Value: true
+        - Key: deletion_protection.enabled
+          Value: true
+  SSMParamPrivateLinkNLBArn:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub The ARN of the PrivateLink NLB for ${PrivateLinkConnectionName}
+      Type: String
+      Name: !Sub '/${Environment}/${PrivateLinkConnectionName}/wm-common-vpc-endpoints-private-link-nlb-arn'
+      Value: !Ref PrivateLinkNLB
+  # WMDB prod setup
+  TargetGroupWMDB:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !FindInMap [prod, WMDB, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: WMDB
+      Targets:
+        - Id: !FindInMap [prod, WMDB, ip]
+          Port: !FindInMap [prod, WMDB, destport]
+          AvailabilityZone: all
+  ListenerWMDB:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupWMDB
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !FindInMap [prod, WMDB, nlbport]
+      Protocol: TCP
+  # ETP Postgres prod setup
+  TargetGroupETPPostgresProd:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !FindInMap [prod, ETPPostgres, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: ETPPostgres
+        - Key: Environment
+          Value: prod
+      Targets:
+        - Id: !FindInMap [prod, ETPPostgres, ip]
+          Port: !FindInMap [prod, ETPPostgres, destport]
+          AvailabilityZone: all
+  ListenerETPPostgresProd:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupETPPostgresProd
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !FindInMap [prod, ETPPostgres, nlbport]
+      Protocol: TCP
+  # ETP Neo4j iProd setup
+  TargetGroupETPNeo4jiProd7473:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Select
+        - 0
+        - !Split
+          - ','
+          - !FindInMap [prod, ETPNeo4j, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: ETPNeo4j
+        - Key: Environment
+          Value: iprod
+      Targets:
+        - Id: !Select
+          - 0
+          - !Split
+            - ','
+            - !FindInMap [prod, ETPNeo4j, ip]
+          Port: !Select
+            - 0
+            - !Split
+              - ','
+              - !FindInMap [prod, ETPNeo4j, destport]
+          AvailabilityZone: all
+        - Id: !Select
+          - 1
+          - !Split
+            - ','
+            - !FindInMap [prod, ETPNeo4j, ip]
+          Port: !Select
+            - 0
+            - !Split
+              - ','
+              - !FindInMap [prod, ETPNeo4j, destport]
+          AvailabilityZone: all
+  ListenerETPNeo4jiProd7473:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupETPNeo4jiProd7473
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !Select
+        - 0
+        - !Split
+          - ','
+          - !FindInMap [prod, ETPNeo4j, nlbport]
+      Protocol: TCP
+  TargetGroupETPNeo4jiProd7474:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Select
+        - 1
+        - !Split
+          - ','
+          - !FindInMap [prod, ETPNeo4j, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: ETPNeo4j
+        - Key: Environment
+          Value: iprod
+      Targets:
+        - Id: !Select
+          - 0
+          - !Split
+            - ','
+            - !FindInMap [prod, ETPNeo4j, ip]
+          Port: !Select
+            - 1
+            - !Split
+              - ','
+              - !FindInMap [prod, ETPNeo4j, destport]
+          AvailabilityZone: all
+        - Id: !Select
+          - 1
+          - !Split
+            - ','
+            - !FindInMap [prod, ETPNeo4j, ip]
+          Port: !Select
+            - 1
+            - !Split
+              - ','
+              - !FindInMap [prod, ETPNeo4j, destport]
+          AvailabilityZone: all
+  ListenerETPNeo4jiProd7474:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupETPNeo4jiProd7474
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !Select
+        - 1
+        - !Split
+          - ','
+          - !FindInMap [prod, ETPNeo4j, nlbport]
+      Protocol: TCP
+  TargetGroupETPNeo4jiProd7687:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Select
+        - 2
+        - !Split
+          - ','
+          - !FindInMap [prod, ETPNeo4j, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: ETPNeo4j
+        - Key: Environment
+          Value: iprod
+      Targets:
+        - Id: !Select
+          - 0
+          - !Split
+            - ','
+            - !FindInMap [prod, ETPNeo4j, ip]
+          Port: !Select
+            - 2
+            - !Split
+              - ','
+              - !FindInMap [prod, ETPNeo4j, destport]
+          AvailabilityZone: all
+        - Id: !Select
+          - 1
+          - !Split
+            - ','
+            - !FindInMap [prod, ETPNeo4j, ip]
+          Port: !Select
+            - 2
+            - !Split
+              - ','
+              - !FindInMap [prod, ETPNeo4j, destport]
+          AvailabilityZone: all
+  ListenerETPNeo4jiProd7687:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupETPNeo4jiProd7687
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !Select
+        - 2
+        - !Split
+          - ','
+          - !FindInMap [prod, ETPNeo4j, nlbport]
+      Protocol: TCP
+  # LDP MDM Postgres prod setup
+  TargetGroupLDPMDMPostgresProd:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !FindInMap [prod, LDPMDMPostgres, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: LDPMDMPostgres
+        - Key: Environment
+          Value: prod
+      Targets:
+        - Id: !FindInMap [prod, LDPMDMPostgres, ip]
+          Port: !FindInMap [prod, LDPMDMPostgres, destport]
+          AvailabilityZone: all
+  ListenerLDPMDMPostgresProd:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupLDPMDMPostgresProd
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !FindInMap [prod, LDPMDMPostgres, nlbport]
+      Protocol: TCP
+Outputs:
+  PrivateLinkNLBCanonicalZone:
+    Description: The CanonicalZoneId of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.CanonicalHostedZoneID
+  PrivateLinkNLBArn:
+    Description: The Arn of the PrivateLink NLB
+    Value: !Ref PrivateLinkNLB
+  PrivateLinkNLBFullName:
+    Description: The Full Name of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.LoadBalancerFullName

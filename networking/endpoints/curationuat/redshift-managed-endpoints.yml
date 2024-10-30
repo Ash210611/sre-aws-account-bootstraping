@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: 'AWS::LanguageExtensions'
+Description: >
+  CloudFormation Template for Redshift Managed VPC endpoint  
+
+Parameters:
+  Contact:
+    Description: Contact for stack owner(s).
+    Type: String
+    Default: "WM-SRE-Team@woodmac.com"
+    ConstraintDescription: Must be a valid email address
+  ProjectCode:
+    Description: Project code the resources should be associated with.
+    Type: String
+    Default: "DEV-MODERNPR"
+  ProductCode:
+    Description: Product code the resources should be associated with.
+    Type: String
+    Default: "ldp-datahub"
+  BusinessUnit:
+    Type: String
+    Default: "Woodmac"
+  Environment:
+    Description: Environment the resources should be associated with.
+    Type: String
+    Default: "curationuat"
+    AllowedValues: ["curationdev", "curationuat", "curationprod"]
+  Clusters:
+    Description: Comma Delimited List of clusters to create Redshift endpoint for
+    Type: CommaDelimitedList
+    Default: ldpstoragemanageruat
+
+Mappings:
+  curationuat:
+    ldpstoragemanageruat:
+      clusteridentifier: ldp-storage-manager-uat-cluster
+      endpointname: ldp-datahub-redshift-vpce-uat
+      clusterowneraccount: 364572259388
+      subnetgroupname: ldp-datahub-curationuat-subnet-group
+      vpcsecuritygroupids: 
+        - '{{resolve:ssm:/curationuat/ldp-datahub/redshift-security-group}}'
+
+#################################################################
+# Stack Resources                                               #
+#################################################################
+Resources:
+  # ------------------------------------------------------------------
+  # Iterating through the list of Clusters to create Redshift Endpints
+  # ------------------------------------------------------------------
+  'Fn::ForEach::RedshiftClusters':
+    - ClusterName
+    - !Ref Clusters
+    - 'RedshiftEndpoint${ClusterName}':
+        Type: 'AWS::Redshift::EndpointAccess'
+        Properties:
+          ClusterIdentifier:
+           'Fn::FindInMap': 
+             - Ref: 'Environment'
+             - Ref: 'ClusterName'
+             - 'clusteridentifier'
+          EndpointName: 
+           'Fn::FindInMap': 
+             - Ref: 'Environment'
+             - Ref: 'ClusterName'
+             - 'endpointname'
+          ResourceOwner: 
+           'Fn::FindInMap': 
+             - Ref: 'Environment'
+             - Ref: 'ClusterName'
+             - 'clusterowneraccount'
+          SubnetGroupName: 
+           'Fn::FindInMap': 
+             - Ref: 'Environment'
+             - Ref: 'ClusterName'
+             - 'subnetgroupname'
+          VpcSecurityGroupIds: 
+           'Fn::FindInMap': 
+             - Ref: 'Environment'
+             - Ref: 'ClusterName'
+             - 'vpcsecuritygroupids'
+
+      # ------------------------------------------------------------------
+      # Iterating through the list of Clusters and Store VPC Endpint URL as SSM parameter
+      # ------------------------------------------------------------------
+      'SSMParam${ClusterName}':
+        Type: 'AWS::SSM::Parameter'
+        Properties:
+          Description: The URL of the Redshift endpoint
+          Type: String
+          Tags:
+            'Contact': !Ref Contact
+            'ProjectCode': !Ref ProjectCode
+            'ProductCode': !Ref ProductCode
+            'BusinessUnit': !Ref BusinessUnit
+            'Environment': !Ref Environment
+          Name: !Sub '/${Environment}/${ProductCode}/redshift-endpoint-url'
+          Value: !GetAtt 
+            - !Sub 'RedshiftEndpoint${ClusterName}'
+            - 'Address'
+
+#################################################################
+# Outputs                                                       #
+#################################################################
+Outputs:
+  # ------------------------------------------------------------------
+  # Iterating through the list of Clusters and output each VPC Endpint URL
+  # ------------------------------------------------------------------
+  'Fn::ForEach::EndpointOutputs':
+    - ClusterName
+    - !Ref Clusters
+    - 'Fn::ForEach::GetAttLoop':
+        - Property
+        - [Address]
+        - 'RedshiftEndpoint${ClusterName}${Property}':
+            Value: !GetAtt [!Sub 'RedshiftEndpoint${ClusterName}', !Ref Property]

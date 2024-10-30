@@ -1,0 +1,15 @@
+[[source]]
+name = "nexus"
+url = "https://nexus.prod.woodmac.com/repository/pypi-woodmac-group/simple"
+verify_ssl = true
+
+[packages]
+woodmac-python-logger = "*"
+boto3 = "*"
+click = "*"
+nlb-processing = {editable = true, path = "."}
+
+[dev-packages]
+
+[requires]
+python_version = "3.9"

@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  PrivateLink provider setup for Dependencytrack Shared
+
+Parameters:
+  Environment:
+    Description: The environment in which the stack is deployed
+    Type: String
+  PrivateLinkConnectionName:
+    Description: The name of the PrivateLink Connection
+    Type: String
+
+Mappings:
+  shared:
+    Dependencytrack:
+      ip: 10.113.156.229,10.113.156.137  # IPs of the Shared Dependencytrack ALB
+      fqdn: internal-dtrack-alb-shared-2144644995.eu-west-1.elb.amazonaws.com
+      destport: 443
+      nlbport: 443
+
+Resources:
+  CustomMapping:
+    Type: Custom::Lookup
+    Properties:
+      ServiceToken: !Sub
+        'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:liveservices-environment-mappings-lambda'
+      environment: !Ref Environment
+      region: !Ref AWS::Region
+  PrivateLinkNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Type: network
+      Scheme: internal
+      Subnets:
+        - !GetAtt CustomMapping.privateWebSubnet1
+        - !GetAtt CustomMapping.privateWebSubnet2
+      LoadBalancerAttributes:
+        - Key: load_balancing.cross_zone.enabled
+          Value: true
+        - Key: deletion_protection.enabled
+          Value: true
+  SSMParamPrivateLinkNLBArn:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub The ARN of the PrivateLink NLB for ${PrivateLinkConnectionName}
+      Type: String
+      Name: !Sub '/${Environment}/${PrivateLinkConnectionName}/wm-common-vpc-endpoints-private-link-nlb-arn'
+      Value: !Ref PrivateLinkNLB
+  TargetGroupDependencytrack443:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !FindInMap [shared, Dependencytrack, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: Dependencytrack
+        - Key: Environment
+          Value: shared
+      Targets:
+        - Id: !Select
+          - 0
+          - !Split
+            - ','
+            - !FindInMap [shared, Dependencytrack, ip]
+          Port: !FindInMap [shared, Dependencytrack, destport]
+          AvailabilityZone: all
+        - Id: !Select
+          - 1
+          - !Split
+            - ','
+            - !FindInMap [shared, Dependencytrack, ip]
+          Port: !FindInMap [shared, Dependencytrack, destport]
+          AvailabilityZone: all
+  ListenerDependencytrack443:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupDependencytrack443
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !FindInMap [shared, Dependencytrack, nlbport]
+      Protocol: TCP
+
+Outputs:
+  PrivateLinkNLBCanonicalZone:
+    Description: The CanonicalZoneId of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.CanonicalHostedZoneID
+  PrivateLinkNLBArn:
+    Description: The Arn of the PrivateLink NLB
+    Value: !Ref PrivateLinkNLB
+  PrivateLinkNLBFullName:
+    Description: The Full Name of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.LoadBalancerFullName

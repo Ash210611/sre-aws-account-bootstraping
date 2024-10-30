@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  PrivateLink provider setup for Valuation
+
+Parameters:
+  Environment:
+    Description: The environment in which the stack is deployed
+    Type: String
+  PrivateLinkConnectionName:
+    Description: The name of the PrivateLink Connection
+    Type: String
+
+Mappings:
+  uat:
+    GlobalValuation:
+      albarn: 'arn:aws:elasticloadbalancing:us-east-1:364572259388:loadbalancer/app/wmlgv-Elast-1J0XJ4ET4X58Y/a502bd911c4380fe'  # arn of the UAT valuation ALB
+      destport: '80,443'
+      nlbport: '80,443'
+
+Resources:
+  CustomMapping:
+    Type: Custom::Lookup
+    Properties:
+      ServiceToken: !Sub
+        'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:liveservices-environment-mappings-lambda'
+      environment: !Ref Environment
+      region: !Ref AWS::Region
+  PrivateLinkNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Type: network
+      Scheme: internal
+      Subnets:
+        - !GetAtt CustomMapping.privateWebSubnet3
+        - !GetAtt CustomMapping.privateWebSubnet4
+      LoadBalancerAttributes:
+        - Key: load_balancing.cross_zone.enabled
+          Value: true
+        - Key: deletion_protection.enabled
+          Value: true
+  SSMParamPrivateLinkNLBArn:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub The ARN of the PrivateLink NLB for ${PrivateLinkConnectionName}
+      Type: String
+      Name: !Sub '/${Environment}/${PrivateLinkConnectionName}/wm-common-vpc-endpoints-private-link-nlb-arn'
+      Value: !Ref PrivateLinkNLB
+  TargetGroupGlobalValuation80:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Select
+        - 0
+        - !Split
+          - ','
+          - !FindInMap [uat, GlobalValuation, destport]
+      Protocol: TCP
+      TargetType: alb
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: 80
+      HealthCheckPath: /api/system/healthcheck
+      Tags:
+        - Key: Module
+          Value: GlobalValuation
+        - Key: Environment
+          Value: uat
+      Targets:
+        - Id: !FindInMap [uat, GlobalValuation, albarn]
+          Port: !Select
+            - 0
+            - !Split
+              - ','
+              - !FindInMap [uat, GlobalValuation, destport]
+  ListenerGlobalValuation80:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupGlobalValuation80
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !Select
+        - 0
+        - !Split
+          - ','
+          - !FindInMap [uat, GlobalValuation, nlbport]
+      Protocol: TCP
+  TargetGroupGlobalValuation443:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Select
+        - 1
+        - !Split
+          - ','
+          - !FindInMap [uat, GlobalValuation, destport]
+      Protocol: TCP
+      TargetType: alb
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: HTTPS
+      HealthCheckPort: 443
+      HealthCheckPath: /api/system/healthcheck
+      Tags:
+        - Key: Module
+          Value: GlobalValuation
+        - Key: Environment
+          Value: uat
+      Targets:
+        - Id: !FindInMap [uat, GlobalValuation, albarn]
+          Port: !Select
+            - 1
+            - !Split
+              - ','
+              - !FindInMap [uat, GlobalValuation, destport]
+  ListenerGlobalValuation443:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupGlobalValuation443
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !Select
+        - 1
+        - !Split
+          - ','
+          - !FindInMap [uat, GlobalValuation, nlbport]
+      Protocol: TCP
+
+Outputs:
+  PrivateLinkNLBCanonicalZone:
+    Description: The CanonicalZoneId of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.CanonicalHostedZoneID
+  PrivateLinkNLBArn:
+    Description: The Arn of the PrivateLink NLB
+    Value: !Ref PrivateLinkNLB
+  PrivateLinkNLBFullName:
+    Description: The Full Name of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.LoadBalancerFullName

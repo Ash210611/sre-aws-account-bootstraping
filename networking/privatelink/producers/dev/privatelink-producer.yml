@@ -1,0 +1,265 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  PrivateLink provider setup for Lens
+
+Parameters:
+  Environment:
+    Description: The environment in which the stack is deployed
+    Type: String
+  PrivateLinkConnectionName:
+    Description: The name of the PrivateLink Connection
+    Type: String
+
+Mappings:
+  dev:
+    Molecule:
+      ip: '10.89.169.80'
+      destport: '20101,10101,22'
+      nlbport: '20101,10101,2222'
+    Venom:
+      albarn: 'arn:aws:elasticloadbalancing:us-east-1:576128614747:loadbalancer/app/venom-alb-dev/a4cc19ef3255d915'  # arn of the dev Venom ALB
+      destport: '443'
+      nlbport: '443'
+    Venomec2:
+      ip: '10.89.169.13'
+      destport: '443'
+      nlbport: '444'
+Resources:
+  CustomMapping:
+    Type: Custom::Lookup
+    Properties:
+      ServiceToken: !Sub
+        'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:liveservices-environment-mappings-lambda'
+      environment: !Ref Environment
+      region: !Ref AWS::Region
+  PrivateLinkNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Type: network
+      Scheme: internal
+      Subnets:
+        - !GetAtt CustomMapping.privateWebSubnet3
+        - !GetAtt CustomMapping.privateWebSubnet4
+      LoadBalancerAttributes:
+        - Key: load_balancing.cross_zone.enabled
+          Value: true
+        - Key: deletion_protection.enabled
+          Value: true
+  SSMParamPrivateLinkNLBArn:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: !Sub The ARN of the PrivateLink NLB for ${PrivateLinkConnectionName}
+      Type: String
+      Name: !Sub '/${Environment}/${PrivateLinkConnectionName}/wm-common-vpc-endpoints-private-link-nlb-arn'
+      Value: !Ref PrivateLinkNLB
+  TargetGroupMolecule20101:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Select
+        - 0
+        - !Split
+          - ','
+          - !FindInMap [dev, Molecule, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: Molecule
+        - Key: Environment
+          Value: dev
+      Targets:
+        - Id: !FindInMap [dev, Molecule, ip]
+          Port: !Select
+            - 0
+            - !Split
+              - ','
+              - !FindInMap [dev, Molecule, destport]
+  ListenerMolecule20101:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupMolecule20101
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !Select
+        - 0
+        - !Split
+          - ','
+          - !FindInMap [dev, Molecule, nlbport]
+      Protocol: TCP
+  TargetGroupMolecule10101:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Select
+        - 1
+        - !Split
+          - ','
+          - !FindInMap [dev, Molecule, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: Molecule
+        - Key: Environment
+          Value: dev
+      Targets:
+        - Id: !FindInMap [dev, Molecule, ip]
+          Port: !Select
+            - 1
+            - !Split
+              - ','
+              - !FindInMap [dev, Molecule, destport]
+  ListenerMolecule10101:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupMolecule10101
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !Select
+        - 1
+        - !Split
+          - ','
+          - !FindInMap [dev, Molecule, nlbport]
+      Protocol: TCP
+  TargetGroupMolecule22:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Select
+        - 2
+        - !Split
+          - ','
+          - !FindInMap [dev, Molecule, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: Molecule
+        - Key: Environment
+          Value: dev
+      Targets:
+        - Id: !FindInMap [dev, Molecule, ip]
+          Port: !Select
+            - 2
+            - !Split
+              - ','
+              - !FindInMap [dev, Molecule, destport]
+  ListenerMolecule2222:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupMolecule22
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !Select
+        - 2
+        - !Split
+          - ','
+          - !FindInMap [dev, Molecule, nlbport]
+      Protocol: TCP
+# Venom service
+  ListenerVenom443:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupVenom443
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !Select
+        - 0
+        - !Split
+          - ','
+          - !FindInMap [dev, Venom, nlbport]
+      Protocol: TCP
+  TargetGroupVenom443:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Select
+        - 0
+        - !Split
+          - ','
+          - !FindInMap [dev, Venom, destport]
+      Protocol: TCP
+      TargetType: alb
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: HTTPS
+      Tags:
+        - Key: Module
+          Value: Venom
+        - Key: Environment
+          Value: dev
+      Targets:
+        - Id: !FindInMap [dev, Venom, albarn]
+          Port: !Select
+            - 0
+            - !Split
+              - ','
+              - !FindInMap [dev, Venom, destport]
+
+# Venomec2 service
+  ListenerVenomec2443:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroupVenomec2443
+      LoadBalancerArn: !Ref PrivateLinkNLB
+      Port: !Select
+        - 0
+        - !Split
+          - ','
+          - !FindInMap [dev, Venomec2, nlbport]
+      Protocol: TCP
+  TargetGroupVenomec2443:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Select
+        - 0
+        - !Split
+          - ','
+          - !FindInMap [dev, Venomec2, destport]
+      Protocol: TCP
+      TargetType: ip
+      VpcId: !GetAtt CustomMapping.vpc
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      HealthCheckProtocol: TCP
+      Tags:
+        - Key: Module
+          Value: Venom - ec2
+        - Key: Environment
+          Value: dev
+      Targets:
+        - Id: !FindInMap [dev, Venomec2, ip]
+          Port: !Select
+            - 0
+            - !Split
+              - ','
+              - !FindInMap [dev, Venomec2, destport]
+
+Outputs:
+  PrivateLinkNLBCanonicalZone:
+    Description: The CanonicalZoneId of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.CanonicalHostedZoneID
+  PrivateLinkNLBArn:
+    Description: The Arn of the PrivateLink NLB
+    Value: !Ref PrivateLinkNLB
+  PrivateLinkNLBFullName:
+    Description: The Full Name of the PrivateLink NLB
+    Value: !GetAtt PrivateLinkNLB.LoadBalancerFullName

@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudFormation Template configuring common vpc endpoints security
+
+Parameters:
+  Environment:
+    Description: The environment in which the stack is deployed
+    Type: String
+Resources:
+  CustomMapping:
+    Type: Custom::Lookup
+    Properties:
+      ServiceToken: !Sub
+        'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:liveservices-environment-mappings-lambda'
+      environment: !Ref Environment
+      region: !Ref AWS::Region
+  DependencyTrackPrivateLinkSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: An DependencyTrack VPC Endpoint Security Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 10.0.0.0/8
+          Description: Port 80 access to the VPC Endpoint
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/8
+          Description: Port 443 access to the VPC Endpoint
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-dependencytrack
+      VpcId: !GetAtt CustomMapping.vpc
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+Outputs:
+  DependencyTrackPrivateLinkSGSGId:
+    Description: ID Of theDependencyTrack Private Link Security Group
+    Value: !GetAtt DependencyTrackPrivateLinkSG.GroupId

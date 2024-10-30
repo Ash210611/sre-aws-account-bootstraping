@@ -1,0 +1,27 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Nexus SSM Parameters Setup
+
+Resources:
+  NexusCredentialsSecretArnSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: Nexus credentials secret arn
+      Name: /liveservices/nexus-credentials-secret-arn
+      Type: String
+      Value: arn:aws:secretsmanager:eu-west-1:364572259388:secret:liveservices-nexus-integration-jenkins-JUbKmO
+  NexusCredentialsKMSKeyArnSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: Nexus credentials KMS key arn
+      Name: /liveservices/nexus-credentials-kms-key-arn
+      Type: String
+      Value: arn:aws:kms:eu-west-1:364572259388:key/ca67df71-5873-4c05-b717-0a7a5e8b5e25
+
+Outputs:
+  NexusCredentialsSecretArnSSMParameterName:
+    Description: Nexus credentials secret arn parameter name
+    Value: /liveservices/nexus-credentials-secret-arn
+  NexusCredentialsKMSKeyArnSSMParameterName:
+    Description: Nexus credentials KMS key arn
+    Value: /liveservices/nexus-credentials-secret-arn
